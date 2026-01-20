@@ -54,6 +54,11 @@ object MedicineScheduler {
         }
     }
 
+    fun actualizarAlarma(context: Context, item: MedicationEntity) {
+        cancelarAlarma(context, item)
+        programarAlarma(context, item)
+    }
+
     fun cancelarAlarma(context: Context, item: MedicationEntity) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, MedicineReceiver::class.java)

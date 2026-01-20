@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessAlarm
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,7 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import java.util.Calendar
+import com.example.medicationtracker.data.local.MedicationEntity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,8 +30,10 @@ fun MedicationScreen(viewModel: MedicationViewModel) {
     val minuto by viewModel.minuto.collectAsState()
     val lista by viewModel.medicinas.collectAsState(initial = emptyList())
 
+    val esEdicion by viewModel.esEdicion.collectAsState()
+    val notificacionesActivas by viewModel.notificacionesActivas.collectAsState()
+
     // TimePicker Dialog
-    val calendar = Calendar.getInstance()
     val timePickerDialog = TimePickerDialog(
         context,
         { _, h, m -> viewModel.actualizarCampos(nombre, dosis, h, m) },
@@ -46,17 +49,46 @@ fun MedicationScreen(viewModel: MedicationViewModel) {
         }
     ) { padding ->
         Column(
-            modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize()
+            modifier = Modifier
+                .padding(padding)
+                .padding(16.dp)
+                .fillMaxSize()
         ) {
-            // Formulario
+
+            // --- SWITCH GLOBAL ---
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (notificacionesActivas) "Notificaciones ACTIVAS" else "Notificaciones PAUSADAS",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Switch(
+                        checked = notificacionesActivas,
+                        onCheckedChange = { viewModel.toggleNotificacionesGlobales(it) }
+                    )
+                }
+            }
+
+            // --- FORMULARIO ---
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Nueva Alarma", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = if (esEdicion) "Editar Medicamento" else "Nuevo Medicamento",
+                        style = MaterialTheme.typography.titleMedium
+                    )
 
                     OutlinedTextField(
                         value = nombre,
                         onValueChange = { viewModel.actualizarCampos(it, dosis, hora, minuto) },
-                        label = { Text("Medicamento (Ej: Ibuprofeno)") },
+                        label = { Text("Medicamento") },
                         modifier = Modifier.fillMaxWidth(),
                         leadingIcon = { Icon(Icons.Default.MedicalServices, null) }
                     )
@@ -64,7 +96,7 @@ fun MedicationScreen(viewModel: MedicationViewModel) {
                     OutlinedTextField(
                         value = dosis,
                         onValueChange = { viewModel.actualizarCampos(nombre, it, hora, minuto) },
-                        label = { Text("Dosis (Ej: 1 tableta)") },
+                        label = { Text("Dosis") },
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -74,9 +106,11 @@ fun MedicationScreen(viewModel: MedicationViewModel) {
                         onValueChange = {},
                         label = { Text("Hora de toma") },
                         readOnly = true,
-                        modifier = Modifier.fillMaxWidth().clickable { timePickerDialog.show() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { timePickerDialog.show() },
                         leadingIcon = { Icon(Icons.Default.AccessAlarm, null) },
-                        enabled = false, // Deshabilitado para escritura, click manejado arriba
+                        enabled = false,
                         colors = OutlinedTextFieldDefaults.colors(
                             disabledTextColor = MaterialTheme.colorScheme.onSurface,
                             disabledBorderColor = MaterialTheme.colorScheme.outline,
@@ -84,11 +118,23 @@ fun MedicationScreen(viewModel: MedicationViewModel) {
                         )
                     )
 
-                    Button(
-                        onClick = { viewModel.guardarMedicamento() },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Programar Recordatorio")
+                    // Botones de Acción (Guardar / Cancelar)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (esEdicion) {
+                            OutlinedButton(
+                                onClick = { viewModel.cancelarEdicion() },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Cancelar")
+                            }
+                        }
+
+                        Button(
+                            onClick = { viewModel.guardarMedicamento() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (esEdicion) "Actualizar" else "Guardar")
+                        }
                     }
                 }
             }
@@ -96,10 +142,14 @@ fun MedicationScreen(viewModel: MedicationViewModel) {
             Spacer(modifier = Modifier.height(16.dp))
             Text("Horarios Programados", style = MaterialTheme.typography.titleMedium)
 
-            // Lista
+            // --- LISTA ---
             LazyColumn {
                 items(lista) { item ->
-                    MedicineItem(item, onDelete = { viewModel.eliminarMedicamento(item) })
+                    MedicineItem(
+                        item = item,
+                        onDelete = { viewModel.eliminarMedicamento(item) },
+                        onEdit = { viewModel.cargarParaEditar(item) } // <--- Conectamos Editar
+                    )
                 }
             }
         }
@@ -107,7 +157,11 @@ fun MedicationScreen(viewModel: MedicationViewModel) {
 }
 
 @Composable
-fun MedicineItem(item: com.example.medicationtracker.data.local.MedicationEntity, onDelete: () -> Unit) {
+fun MedicineItem(
+    item: MedicationEntity,
+    onDelete: () -> Unit,
+    onEdit: () -> Unit // <--- Nuevo parámetro
+) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
@@ -117,12 +171,19 @@ fun MedicineItem(item: com.example.medicationtracker.data.local.MedicationEntity
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(item.nombre, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text("${item.dosis} • ${String.format("%02d:%02d", item.hora, item.minuto)}", style = MaterialTheme.typography.bodyMedium)
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = MaterialTheme.colorScheme.error)
+
+            // Botones de acción
+            Row {
+                IconButton(onClick = onEdit) {
+                    Icon(Icons.Default.Edit, contentDescription = "Editar", tint = MaterialTheme.colorScheme.primary)
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = MaterialTheme.colorScheme.error)
+                }
             }
         }
     }
